@@ -4,19 +4,20 @@ from html import escape
 import requests
 
 API_URL = "https://api.nutrient.io/build"
-api_key = os.getenv("NUTRIENT_API_KEY")
 
 def generate_resume_pdf(
     name: str,
     description: str,
     output_path: str,
-    api_key: str | None = None,
-    page_size: str = "A4",
+    page_size: str = "A4"
 ) -> str:
-    if api_key is None:
-        api_key = os.getenv("NUTRIENT_API_KEY")
+    api_key = os.getenv("NUTRIENT_API_KEY")
+    azure_container_sas_url = os.getenv("AZURE_CONTAINER_SAS_URL")
+
     if not api_key:
         raise ValueError("Missing API key. Set NUTRIENT_API_KEY or pass api_key.")
+    if not azure_container_sas_url:
+        raise ValueError("Missing Azure Container SAS URL.")
 
     safe_name = escape(name)
     safe_desc = escape(description)
@@ -78,6 +79,35 @@ def generate_resume_pdf(
     except requests.HTTPError as ex:
         msg = getattr(resp, "text", "")
         raise requests.HTTPError(f"PDF generation failed: {ex}\nResponse text: {msg}") from ex
+
+    pdf_bytes = resp.content
+
+    if azure_container_sas_url:
+        container_url = azure_container_sas_url.strip()
+
+        if "?" in container_url:
+            base_url, sas_query = container_url.split("?", 1)
+        else:
+            raise ValueError("azure_container_sas_url must include a SAS query string")
+
+        import re
+        base = re.sub(r"[^a-zA-Z0-9_-]+", "_", name).strip("_") or "resume"
+        blob_name = f"{base}.pdf"
+
+        blob_url = f"{base_url.rstrip('/')}/{blob_name}?{sas_query}"
+
+        put_headers = {
+            "x-ms-blob-type": "BlockBlob",
+            "Content-Type": "application/pdf",
+        }
+        put_resp = requests.put(blob_url, headers=put_headers, data=pdf_bytes, timeout=60)
+        try:
+            put_resp.raise_for_status()
+        except requests.HTTPError as ex:
+            msg = getattr(put_resp, "text", "")
+            raise requests.HTTPError(f"Azure blob upload failed: {ex}\nResponse text: {msg}") from ex
+
+        return blob_url
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "wb") as f:
