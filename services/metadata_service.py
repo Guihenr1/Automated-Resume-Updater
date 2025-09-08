@@ -1,0 +1,96 @@
+import os
+import json
+import requests
+from datetime import datetime, timezone
+from utils.identifiers import slugify
+
+def persist_resume_metadata(
+    original_name: str,
+    code: str,
+    blob_url: str,
+    page_size: str,
+    description: str,
+) -> None:
+    created_at = datetime.now(timezone.utc).isoformat()
+    name_slug = slugify(original_name)
+
+    entity = {
+        "PartitionKey": "by-code",
+        "RowKey": code,
+        "OriginalName": original_name,
+        "NameSlug": name_slug,
+        "Code": code,
+        "BlobUrl": blob_url,
+        "PageSize": page_size,
+        "CreatedAt": created_at,
+        "Description": description,
+    }
+
+    table_sas_url = os.getenv("AZURE_TABLE_SAS_URL")
+    table_name = os.getenv("AZURE_TABLE_NAME")
+    if table_sas_url and table_name:
+        _insert_table_entity(table_sas_url.strip(), table_name.strip(), entity)
+
+    logs_container_sas_url = os.getenv("AZURE_LOGS_CONTAINER_SAS_URL")
+    if logs_container_sas_url:
+        _upload_metadata_json_to_logs(logs_container_sas_url.strip(), code, entity)
+
+def _insert_table_entity(table_account_sas_url: str, table_name: str, entity: dict) -> None:
+    if "?" not in table_account_sas_url:
+        raise ValueError("AZURE_TABLE_SAS_URL must include a SAS query string")
+
+    if not entity.get("PartitionKey") or not entity.get("RowKey"):
+        raise ValueError("Entity must include non-empty 'PartitionKey' and 'RowKey'")
+
+    base_url, sas_query = table_account_sas_url.split("?", 1)
+
+    from urllib.parse import urlparse
+    parsed = urlparse(base_url)
+    path = parsed.path.rstrip("/")
+    table_segment = f"/{table_name}"
+
+    if path.endswith(table_segment) or path.endswith(f"{table_segment}()"):
+        table_url = base_url.rstrip("/")
+    else:
+        if not table_name:
+            raise ValueError("table_name is required when AZURE_TABLE_SAS_URL is account-level")
+        table_url = f"{base_url.rstrip('/')}{table_segment}"
+
+    if table_url.endswith("()"):
+        table_url = table_url[:-2]
+
+    url = f"{table_url}?{sas_query}"
+
+    headers = {
+        "Accept": "application/json;odata=nometadata",
+        "Content-Type": "application/json;odata=nometadata",
+        "Prefer": "return-no-content",
+        # These headers improve compatibility with the Table service
+        "DataServiceVersion": "3.0;NetFx",
+        "MaxDataServiceVersion": "3.0;NetFx",
+        "x-ms-version": "2019-02-02",
+    }
+
+    import requests, json
+    resp = requests.post(url, headers=headers, data=json.dumps(entity), timeout=30)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as ex:
+        raise requests.HTTPError(f"Table insert failed: {ex}\nResponse text: {getattr(resp, 'text', '')}") from ex
+
+def _upload_metadata_json_to_logs(logs_container_sas_url: str, code: str, entity: dict) -> None:
+    if "?" not in logs_container_sas_url:
+        raise ValueError("AZURE_LOGS_CONTAINER_SAS_URL must include a SAS query string")
+
+    base_url, sas_query = logs_container_sas_url.split("?", 1)
+    blob_name = f"{code}.json"
+    url = f"{base_url.rstrip('/')}/{blob_name}?{sas_query}"
+
+    headers = {
+        "x-ms-blob-type": "BlockBlob",
+        "Content-Type": "application/json; charset=utf-8",
+        "If-None-Match": "*",
+    }
+    body = json.dumps(entity, ensure_ascii=False).encode("utf-8")
+    resp = requests.put(url, headers=headers, data=body, timeout=30)
+    resp.raise_for_status()
