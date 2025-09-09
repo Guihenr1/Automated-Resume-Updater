@@ -94,3 +94,67 @@ def _upload_metadata_json_to_logs(logs_container_sas_url: str, code: str, entity
     body = json.dumps(entity, ensure_ascii=False).encode("utf-8")
     resp = requests.put(url, headers=headers, data=body, timeout=30)
     resp.raise_for_status()
+
+def _upload_file(
+        api_url: str,
+        headers: dict[str, str],
+        data: dict[str, str] | None = None,
+        files: dict[str, object] | None = None,
+        timeout: int = 30
+) -> requests.Response:
+    resp = requests.post(api_url, headers=headers, data=data, files=files, timeout=timeout)
+
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as ex:
+        msg = getattr(resp, "text", "")
+        raise requests.HTTPError(f"PDF generation failed: {ex}\nResponse text: {msg}") from ex
+
+    return resp
+
+def _update_log(
+        api_url: str,
+        name: str,
+        description: str,
+        page_size: str,
+        upload: requests.Response,
+        timeout: int = 30
+) -> str | None:
+    from utils.identifiers import slugify, generate_resume_code
+    container_url = api_url.strip()
+
+    if "?" in container_url:
+        base_url, sas_query = container_url.split("?", 1)
+    else:
+        raise ValueError("azure_container_sas_url must include a SAS query string")
+
+    name_slug = slugify(name)
+    code = generate_resume_code()
+    blob_name = f"{name_slug}-{code}.pdf"
+
+    blob_url = f"{base_url.rstrip('/')}/{blob_name}?{sas_query}"
+
+    put_headers = {
+        "x-ms-blob-type": "BlockBlob",
+        "Content-Type": "application/pdf",
+        "If-None-Match": "*",
+    }
+    put_resp = requests.put(blob_url, headers=put_headers, data=upload.content, timeout=timeout)
+    try:
+        put_resp.raise_for_status()
+    except requests.HTTPError as ex:
+        msg = getattr(put_resp, "text", "")
+        raise requests.HTTPError(f"Azure blob upload failed: {ex}\nResponse text: {msg}") from ex
+
+    try:
+        persist_resume_metadata(
+            original_name=name,
+            code=code,
+            blob_url=blob_url,
+            page_size=page_size,
+            description=description,
+        )
+    except Exception as meta_ex:
+        print(f"Warning: failed to persist metadata: {meta_ex}")
+
+    return blob_url

@@ -4,7 +4,7 @@ import uuid
 from html import escape
 import requests
 
-from utils.identifiers import generate_resume_code, slugify
+from services.metadata_service import _upload_file, _update_log, persist_resume_metadata
 
 API_URL = "https://api.nutrient.io/build"
 
@@ -21,12 +21,10 @@ def generate_resume_pdf(
     page_size: str = "A4"
 ) -> str:
     api_key = os.getenv("NUTRIENT_API_KEY")
-    azure_container_sas_url = os.getenv("AZURE_CONTAINER_SAS_URL")
+    azure_container_sas_url = os.getenv("AZURE_CONTAINER_SAS_URLA")
 
     if not api_key:
         raise ValueError("Missing API key. Set NUTRIENT_API_KEY or pass api_key.")
-    if not azure_container_sas_url:
-        raise ValueError("Missing Azure Container SAS URL.")
 
     safe_name = escape(name)
     safe_desc = escape(description)
@@ -82,58 +80,13 @@ def generate_resume_pdf(
         "instructions": json.dumps(instructions),
     }
 
-    resp = requests.post(API_URL, headers=headers, data=data, files=files, timeout=60)
-    try:
-        resp.raise_for_status()
-    except requests.HTTPError as ex:
-        msg = getattr(resp, "text", "")
-        raise requests.HTTPError(f"PDF generation failed: {ex}\nResponse text: {msg}") from ex
-
-    pdf_bytes = resp.content
+    upload_response = _upload_file(API_URL, headers=headers, data=data, files=files)
 
     if azure_container_sas_url:
-        from utils.identifiers import slugify, generate_resume_code
-        from services.metadata_service import persist_resume_metadata
-        container_url = azure_container_sas_url.strip()
-
-        if "?" in container_url:
-            base_url, sas_query = container_url.split("?", 1)
-        else:
-            raise ValueError("azure_container_sas_url must include a SAS query string")
-
-        name_slug = slugify(name)
-        code = generate_resume_code()
-        blob_name = f"{name_slug}-{code}.pdf"
-
-        blob_url = f"{base_url.rstrip('/')}/{blob_name}?{sas_query}"
-
-        put_headers = {
-            "x-ms-blob-type": "BlockBlob",
-            "Content-Type": "application/pdf",
-            "If-None-Match": "*",
-        }
-        put_resp = requests.put(blob_url, headers=put_headers, data=pdf_bytes, timeout=60)
-        try:
-            put_resp.raise_for_status()
-        except requests.HTTPError as ex:
-            msg = getattr(put_resp, "text", "")
-            raise requests.HTTPError(f"Azure blob upload failed: {ex}\nResponse text: {msg}") from ex
-
-        try:
-            persist_resume_metadata(
-                original_name=name,
-                code=code,
-                blob_url=blob_url,
-                page_size=page_size,
-                description=description,
-            )
-        except Exception as meta_ex:
-            print(f"Warning: failed to persist metadata: {meta_ex}")
-
-        return blob_url
+        return _update_log(azure_container_sas_url, name, description, page_size, upload_response)
 
     os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
     with open(output_path, "wb") as f:
-        f.write(resp.content)
+        f.write(upload_response.content)
 
     return output_path
