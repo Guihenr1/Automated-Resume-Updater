@@ -158,3 +158,82 @@ def _update_log(
         print(f"Warning: failed to persist metadata: {meta_ex}")
 
     return blob_url
+
+def get_all_resumes(page_size: int = 1000, max_pages: int | None = None) -> list[dict]:
+    table_sas_url = os.getenv("AZURE_TABLE_SAS_URL")
+    table_name = os.getenv("AZURE_TABLE_NAME")
+    if not table_sas_url or not table_name:
+        return []
+
+    if "?" not in table_sas_url:
+        raise ValueError("AZURE_TABLE_SAS_URL must include a SAS query string")
+
+    base_url, sas_query = table_sas_url.split("?", 1)
+
+    from urllib.parse import urlparse, quote
+    parsed = urlparse(base_url)
+    path = parsed.path.rstrip("/")
+    table_segment = f"/{table_name}"
+
+    if path.endswith(table_segment) or path.endswith(f"{table_segment}()"):
+        table_url = base_url.rstrip("/")
+    else:
+        table_url = f"{base_url.rstrip('/')}{table_segment}"
+
+    if table_url.endswith("()"):
+        table_url = table_url[:-2]
+
+    base_query_url = f"{table_url}?{sas_query}"
+
+    headers = {
+        "Accept": "application/json;odata=nometadata",
+        "DataServiceVersion": "3.0;NetFx",
+        "MaxDataServiceVersion": "3.0;NetFx",
+        "x-ms-version": "2019-02-02",
+    }
+
+    resumes: list[dict] = []
+    next_pk: str | None = None
+    next_rk: str | None = None
+    pages_fetched = 0
+
+    while True:
+        query_parts = [
+            "$filter=PartitionKey eq 'by-code'",
+            f"$top={page_size}",
+        ]
+        if next_pk and next_rk:
+            query_parts.append(f"NextPartitionKey={quote(next_pk)}")
+            query_parts.append(f"NextRowKey={quote(next_rk)}")
+
+        url = f"{base_query_url}&{'&'.join(query_parts)}"
+
+        resp = requests.get(url, headers=headers, timeout=30)
+        try:
+            resp.raise_for_status()
+        except requests.HTTPError as ex:
+            msg = getattr(resp, "text", "")
+            raise requests.HTTPError(f"Table query failed: {ex}\nResponse text: {msg}") from ex
+
+        payload = resp.json() if resp.content else {}
+        values = payload.get("value", [])
+        for e in values:
+            resumes.append({
+                "code": e.get("Code") or e.get("RowKey"),
+                "name": e.get("OriginalName") or e.get("NameSlug"),
+                "description": e.get("Description"),
+                "page_size": e.get("PageSize"),
+                "created_at": e.get("CreatedAt"),
+                "blob_url": e.get("BlobUrl"),
+            })
+
+        next_pk = resp.headers.get("x-ms-continuation-NextPartitionKey")
+        next_rk = resp.headers.get("x-ms-continuation-NextRowKey")
+
+        pages_fetched += 1
+        if not next_pk or not next_rk:
+            break
+        if max_pages is not None and pages_fetched >= max_pages:
+            break
+
+    return resumes

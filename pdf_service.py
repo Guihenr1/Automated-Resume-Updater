@@ -21,7 +21,7 @@ def generate_resume_pdf(
     page_size: str = "A4"
 ) -> str:
     api_key = os.getenv("NUTRIENT_API_KEY")
-    azure_container_sas_url = os.getenv("AZURE_CONTAINER_SAS_URLA")
+    azure_container_sas_url = os.getenv("AZURE_CONTAINER_SAS_URL")
 
     if not api_key:
         raise ValueError("Missing API key. Set NUTRIENT_API_KEY or pass api_key.")
