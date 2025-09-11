@@ -237,3 +237,18 @@ def get_all_resumes(page_size: int = 1000, max_pages: int | None = None) -> list
             break
 
     return resumes
+
+def delete_resume_blob(blob_url: str, timeout: int = 30) -> None:
+    if not blob_url:
+        raise ValueError("blob_url is required to delete a resume blob")
+
+    headers = {
+        "x-ms-version": "2019-12-12",
+        "x-ms-delete-snapshots": "include",
+    }
+    resp = requests.delete(blob_url, headers=headers, timeout=timeout)
+    try:
+        resp.raise_for_status()
+    except requests.HTTPError as ex:
+        msg = getattr(resp, "text", "")
+        raise requests.HTTPError(f"Failed to delete resume blob: {ex}\nResponse text: {msg}") from ex
