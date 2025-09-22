@@ -95,7 +95,6 @@ def update_resume_interactive() -> None:
 
     input("\nPress Enter to return to the menu...")
 
-
 def list_resumes_interactive() -> Optional[str]:
     try:
         resumes = get_all_resumes()

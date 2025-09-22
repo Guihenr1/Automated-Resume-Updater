@@ -1,5 +1,7 @@
 import os
 import json
+from html import escape
+
 import requests
 from datetime import datetime, timezone
 from utils.identifiers import slugify
@@ -252,3 +254,122 @@ def delete_resume_blob(blob_url: str, timeout: int = 30) -> None:
     except requests.HTTPError as ex:
         msg = getattr(resp, "text", "")
         raise requests.HTTPError(f"Failed to delete resume blob: {ex}\nResponse text: {msg}") from ex
+
+def improve_text_with_openai(
+    text: str,
+    model: str = "gpt-4o-mini",
+    temperature: float = 0.3,
+    max_tokens: int = 600
+) -> str:
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key:
+        raise ValueError("Missing OpenAI API key. Set OPENAI_API_KEY in the environment.")
+
+    url = "https://api.openai.com/v1/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are an assistant that rewrites user-provided text for clarity, grammar, and concision. "
+                "Preserve all factual details and specific accomplishments. Avoid adding new facts. "
+                "Return ONLY the improved text, with no markdown or additional commentary."
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"Improve the following resume description:\n\n{text}",
+        },
+    ]
+    payload = {
+        "model": model,
+        "messages": messages,
+        "temperature": temperature,
+        "max_tokens": max_tokens,
+    }
+
+    try:
+        resp = requests.post(url, headers=headers, data=json.dumps(payload), timeout=30)
+    except requests.RequestException as e:
+        raise RuntimeError(f"Failed to contact OpenAI API: {e}") from e
+
+    if resp.status_code != 200:
+        try:
+            err = resp.json()
+        except Exception:
+            err = resp.text
+        raise RuntimeError(f"OpenAI API error ({resp.status_code}): {err}")
+
+    data = resp.json()
+    try:
+        improved = data["choices"][0]["message"]["content"]
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(f"Unexpected OpenAI response format: {data}") from e
+
+    return improved.strip()
+
+def render_section(title: str, content) -> str:
+    if content is None:
+        return ""
+    html = []
+    html.append(f'<div class="section"><h2>{escape(title)}</h2>')
+    if isinstance(content, str):
+        if content.strip():
+            html.append(f"<p>{escape(content.strip())}</p>")
+    elif isinstance(content, dict):
+        if content:
+            html.append("<dl>")
+            for k, v in content.items():
+                k_s = escape(str(k))
+                if isinstance(v, str):
+                    v_s = escape(v)
+                    html.append(f"<dt>{k_s}</dt><dd>{v_s}</dd>")
+                else:
+                    v_s = escape(json.dumps(v, ensure_ascii=False))
+                    html.append(f"<dt>{k_s}</dt><dd><pre>{v_s}</pre></dd>")
+            html.append("</dl>")
+    elif isinstance(content, (list, tuple)):
+        if content:
+            if all(isinstance(item, dict) for item in content):
+                for item in content:
+                    html.append('<div class="item">')
+                    heading = []
+                    for key in ("role", "title", "position"):
+                        if key in item and item[key]:
+                            heading.append(str(item[key]))
+                            break
+                    for key in ("company", "organization", "institution"):
+                        if key in item and item[key]:
+                            heading.append(str(item[key]))
+                            break
+                    sub = []
+                    for key in ("period", "dates", "duration", "location"):
+                        if key in item and item[key]:
+                            sub.append(str(item[key]))
+                    if heading:
+                        html.append(f"<h3>{escape(' — '.join(heading))}</h3>")
+                    if sub:
+                        html.append(f"<p class=\"meta\">{escape(' · '.join(sub))}</p>")
+                    for key in ("bullets", "highlights", "responsibilities"):
+                        if key in item and isinstance(item[key], (list, tuple)) and item[key]:
+                            html.append("<ul>")
+                            for bullet in item[key]:
+                                html.append(f"<li>{escape(str(bullet))}</li>")
+                            html.append("</ul>")
+                    remaining = {k: v for k, v in item.items() if k not in {"role","title","position","company","organization","institution","period","dates","duration","location","bullets","highlights","responsibilities"}}
+                    if remaining:
+                        html.append("<dl>")
+                        for k, v in remaining.items():
+                            html.append(f"<dt>{escape(str(k))}</dt><dd>{escape(str(v))}</dd>")
+                        html.append("</dl>")
+                    html.append("</div>")
+            else:
+                html.append("<ul>")
+                for item in content:
+                    html.append(f"<li>{escape(str(item))}</li>")
+                html.append("</ul>")
+    html.append("</div>")
+    return "".join(html)
