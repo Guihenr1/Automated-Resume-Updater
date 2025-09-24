@@ -39,7 +39,35 @@ def generate_resume_pdf(
     safe_name = escape(name)
     safe_desc = escape(description)
 
-    safe_desc = improve_text_with_openai(safe_desc)
+    if objective:
+        safe_objective = escape(objective)
+        safe_objective = improve_text_with_openai("objective", safe_desc)
+
+    if technical_skills:
+        safe_technical_skills = escape(technical_skills)
+        safe_technical_skills = improve_text_with_openai("technical_skills", safe_technical_skills)
+
+    if experience:
+        experience = improve_text_with_openai("experience", experience)
+
+    if education:
+        education = improve_text_with_openai("education", education)
+
+    if certification:
+        certification = improve_text_with_openai("certificate", certification)
+
+    if courses:
+        safe_courses = escape(courses)
+        safe_courses = improve_text_with_openai("courses", safe_courses)
+
+    if languages:
+        safe_languages = escape(languages)
+        safe_languages = improve_text_with_openai("languages", safe_languages)
+
+    if links:
+        links = improve_text_with_openai("links", links)
+
+    safe_desc = improve_text_with_openai("description", safe_desc)
 
     sections_html = []
 

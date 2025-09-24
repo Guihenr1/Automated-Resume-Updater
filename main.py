@@ -4,6 +4,8 @@ from pdf_service import generate_resume_pdf
 from services.metadata_service import get_all_resumes, delete_resume_blob
 from typing import Optional
 
+from utils.json_input import read_json_list_of_dicts
+
 load_env_file()
 
 @dataclass
@@ -141,6 +143,14 @@ def create_resume_interactive() -> None:
     name = input("Name: ").strip()
     description = input("Description: ").strip()
     page_size = input("Page size (e.g., A4, Letter): ").strip() or "A4"
+    objective = input("Objective: ").strip()
+    technical_skills = input("Technical Skills: ").strip()
+    experience = read_json_list_of_dicts("Experience (JSON array or object): ")
+    education = read_json_list_of_dicts("Education (JSON array or object): ")
+    certification = input("Certification: ").strip()
+    courses = input("Courses: ").strip()
+    languages = input("Languages: ").strip()
+    links = read_json_list_of_dicts("Links (JSON array or object): ")
 
     if not name:
         print("Name is required.")
@@ -150,6 +160,14 @@ def create_resume_interactive() -> None:
     print(f"- Name:        {name}")
     print(f"- Description: {description}")
     print(f"- Page Size:   {page_size}")
+    print(f"- Objective: {objective}")
+    print(f"- Technical Skills: {technical_skills}")
+    print(f"- Experience: {experience}")
+    print(f"- Education: {education}")
+    print(f"- Certification: {certification}")
+    print(f"- Courses: {courses}")
+    print(f"- Languages: {languages}")
+    print(f"- Links: {links}")
 
     choice = input("\nProceed with creating this resume? (y/N): ").strip().lower()
     if choice not in ("y", "yes"):
@@ -167,6 +185,14 @@ def create_resume_interactive() -> None:
             description=description,
             output_path=output_path,
             page_size=page_size,
+            objective=objective,
+            technical_skills=technical_skills,
+            experience=experience,
+            education=education,
+            certification=certification,
+            courses=courses,
+            languages=languages,
+            links=links,
         )
         print("\nSuccess! Resume generated.")
         print(f"Location: {result_path_or_url}")

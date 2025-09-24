@@ -257,6 +257,7 @@ def delete_resume_blob(blob_url: str, timeout: int = 30) -> None:
 
 def improve_text_with_openai(
     text: str,
+    property: list[str] | str,
     model: str = "gpt-4o-mini",
     temperature: float = 0.3,
     max_tokens: int = 600
@@ -281,7 +282,7 @@ def improve_text_with_openai(
         },
         {
             "role": "user",
-            "content": f"Improve the following resume description:\n\n{text}",
+            "content": f"Improve the following resume {property}:\n\n{text}",
         },
     ]
     payload = {
