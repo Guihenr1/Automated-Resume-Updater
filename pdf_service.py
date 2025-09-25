@@ -21,13 +21,13 @@ def generate_resume_pdf(
     output_path: str,
     page_size: str = "A4",
     objective: str | None = None,
-    technical_skills: list[str] | str | None = None,
-    experience: list[dict] | None = None,
-    education: list[dict] | None = None,
-    certification: list[str] | str | None = None,
-    courses: list[str] | str | None = None,
-    languages: list[str] | str | None = None,
-    links: dict | list[dict] | list[str] | None = None,
+    technical_skills: str | None = None,
+    experience: str | None = None,
+    education: str | None = None,
+    certification: str | None = None,
+    courses: str | None = None,
+    languages: str | None = None,
+    links: str | None = None,
 
 ) -> str:
     api_key = os.getenv("NUTRIENT_API_KEY")
@@ -36,82 +36,57 @@ def generate_resume_pdf(
     if not api_key:
         raise ValueError("Missing API key. Set NUTRIENT_API_KEY or pass api_key.")
 
+    sections_html = []
     safe_name = escape(name)
     safe_desc = escape(description)
 
     if objective:
         safe_objective = escape(objective)
-        safe_objective = improve_text_with_openai("objective", safe_desc)
+        safe_objective = improve_text_with_openai("objective", safe_objective)
+        sections_html.append(render_section("Objective", safe_objective))
 
     if technical_skills:
         safe_technical_skills = escape(technical_skills)
         safe_technical_skills = improve_text_with_openai("technical_skills", safe_technical_skills)
+        sections_html.append(render_section("Technical Skills", safe_technical_skills))
 
     if experience:
-        experience = improve_text_with_openai("experience", experience)
+        safe_experience = escape(experience)
+        safe_experience = improve_text_with_openai("experience", safe_experience)
+        sections_html.append(render_section("Experience", safe_experience))
 
     if education:
-        education = improve_text_with_openai("education", education)
+        safe_education = escape(education)
+        safe_education = improve_text_with_openai("education", safe_education)
+        sections_html.append(render_section("Education", safe_education))
 
     if certification:
-        certification = improve_text_with_openai("certificate", certification)
+        safe_certification = escape(certification)
+        safe_certification = improve_text_with_openai("certificate", safe_certification)
+        sections_html.append(render_section("Certification", safe_certification))
 
     if courses:
         safe_courses = escape(courses)
         safe_courses = improve_text_with_openai("courses", safe_courses)
+        sections_html.append(render_section("Courses", safe_courses))
 
     if languages:
         safe_languages = escape(languages)
         safe_languages = improve_text_with_openai("languages", safe_languages)
+        sections_html.append(render_section("Languages", safe_languages))
 
     if links:
-        links = improve_text_with_openai("links", links)
+        safe_links = escape(links)
+        safe_links = improve_text_with_openai("links", safe_links)
+        sections_html.append(render_section("Links", safe_links))
 
     safe_desc = improve_text_with_openai("description", safe_desc)
-
-    sections_html = []
 
     sections_html.append(f"""
                         <div class="section">
                           <h2>About</h2>
                           <pre>{safe_desc}</pre>
                         </div>""")
-    sections_html.append(render_section("Objective", objective))
-    sections_html.append(render_section("Technical Skills", technical_skills))
-    sections_html.append(render_section("Experience", experience))
-    sections_html.append(render_section("Education", education))
-    sections_html.append(render_section("Certification", certification))
-    sections_html.append(render_section("Courses", courses))
-    sections_html.append(render_section("Languages", languages))
-
-    links_html = ""
-    if links:
-        items = []
-        if isinstance(links, dict):
-            for label, url in links.items():
-                label_s = escape(str(label))
-                url_s = escape(str(url))
-                items.append(f'<li><a href="{url_s}" target="_blank" rel="noopener">{label_s}</a></li>')
-        elif isinstance(links, (list, tuple)):
-            for entry in links:
-                if isinstance(entry, dict) and "url" in entry:
-                    label = entry.get("label") or entry.get("name") or entry["url"]
-                    label_s = escape(str(label))
-                    url_s = escape(str(entry["url"]))
-                    items.append(f'<li><a href="{url_s}" target="_blank" rel="noopener">{label_s}</a></li>')
-                else:
-                    label_s = escape(str(entry))
-                    items.append(f"<li>{label_s}</li>")
-        if items:
-            links_html = f"""
-                        <div class="section">
-                          <h2>Links</h2>
-                          <ul>
-                            {''.join(items)}
-                          </ul>
-                        </div>"""
-    if links_html:
-        sections_html.append(links_html)
 
     html_doc = f"""<!doctype html>
                     <html>

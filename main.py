@@ -4,8 +4,6 @@ from pdf_service import generate_resume_pdf
 from services.metadata_service import get_all_resumes, delete_resume_blob
 from typing import Optional
 
-from utils.json_input import read_json_list_of_dicts
-
 load_env_file()
 
 @dataclass
@@ -145,12 +143,12 @@ def create_resume_interactive() -> None:
     page_size = input("Page size (e.g., A4, Letter): ").strip() or "A4"
     objective = input("Objective: ").strip()
     technical_skills = input("Technical Skills: ").strip()
-    experience = read_json_list_of_dicts("Experience (JSON array or object): ")
-    education = read_json_list_of_dicts("Education (JSON array or object): ")
+    experience = input("Experience: ").strip()
+    education = input("Education: ").strip()
     certification = input("Certification: ").strip()
     courses = input("Courses: ").strip()
     languages = input("Languages: ").strip()
-    links = read_json_list_of_dicts("Links (JSON array or object): ")
+    links = input("Links: ").strip()
 
     if not name:
         print("Name is required.")
